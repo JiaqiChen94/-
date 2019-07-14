@@ -1,0 +1,160 @@
+import requests
+from scrapy import Selector
+import pymongo
+from pymongo import MongoClient
+
+client = MongoClient () 
+
+
+domain = "https://www.zhipin.com"
+
+def get_all_sub_jobs():
+    # set header
+    headers = {
+        'User-Agent' : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36"
+    }
+    url = "https://www.zhipin.com"
+    get_requests = requests.get(url, headers = headers).text
+    sel = Selector(text=get_requests)
+    
+    
+    get_sub_job_list = []
+    sub_jobs = sel.xpath(".//div[@class='job-menu']//h4/text()").extract()
+    # the sub jobs under 技术
+    sub_jobs = sub_jobs[:12]
+    
+    keep_hrefs_list = []
+    keep_kas_list = []
+    # use the following sibling to find the next matched sibling
+    for i in sub_jobs:
+        xpath_hrefs = ".//div[@class='job-menu']//h4[text()=" + str("'" +str(i) + "'") + "]/following-sibling::div[1]/a/@href"
+        xpath_kas = ".//div[@class='job-menu']//h4[text()=" + str("'" +str(i) + "'") + "]/following-sibling::div[1]/a/@ka"
+        keep_hrefs_list.append(xpath_hrefs)
+        keep_kas_list.append(xpath_kas)
+    
+    all_href_list = [[]] * len(sub_jobs)
+    all_kas_list = [[]] * len(sub_jobs)
+    
+    for i in range(len(keep_hrefs_list)):
+        houduan_hrefs = sel.xpath(keep_hrefs_list[i]).extract()
+        houduan_kas = sel.xpath(keep_kas_list[i]).extract()
+        each_href = []
+        each_kas = []
+        for j in range(len(houduan_hrefs)):
+            each_href.append(houduan_hrefs[j])
+            each_kas.append(houduan_kas[j])
+        all_href_list[i] = each_href
+        all_kas_list[i] = each_kas
+    
+    # each href and ka link
+    #total_next_pages = [all_href_list, all_kas_list]
+    total_next_pages = all_href_list
+    return total_next_pages
+
+def get_each_page(href, Class = None, subClass = None):
+    Class = Class
+    subClass = subClass
+    # set header
+    headers = {
+        'User-Agent' : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36"
+    }
+    
+    try_page = domain + str(href)
+    print(try_page)
+    get_requests = requests.get(try_page, headers = headers).text
+    sel = Selector(text=get_requests)
+    
+    get_detail_page = sel.xpath(".//div[@class='job-list']//div[@class='info-primary']//a/@href").extract()
+    
+    for page in get_detail_page:
+        get_detail(page, Class = Class, subClass = subClass)
+    
+    
+    # find the new page now (page-next)
+    get_page_next = sel.xpath(".//a[@ka='page-next']/@href").extract()[0]
+    print(get_page_next)
+    if get_page_next != "comjavascript:;":
+        get_each_page(get_page_next, Class= Class, subClass = subClass)
+    
+
+def get_detail(pages, Class = None, subClass = None):
+    # set header
+    headers = {
+        'User-Agent' : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36"
+    }
+    
+    url = "https://www.zhipin.com"
+    another_requests = requests.get(url, headers = headers).text
+    sel_1 = Selector(text=another_requests)
+    
+    # domain + each_page
+    next_page = domain + str(pages)
+    get_requests = requests.get(next_page, headers = headers).text
+    sel = Selector(text=get_requests)
+        
+        
+    job_title = sel.xpath(".//div[@class='job-banner']//div[@class='name']//h1/text()").extract()
+    salary = sel.xpath(".//div[@class='job-banner']//div[@class='name']//span[@class='salary']/text()").extract()
+    other = sel.xpath(".//div[@class='job-banner']//div[@class='info-primary']//p/text()").extract()
+    if len(other) >= 3:
+        location = other[0]
+        education_requirement = other[-1]
+        time = other[1 : -1]
+    else:
+        location = None
+        education_requirement = None
+        time = None
+    benefit = sel.xpath(".//div[@class='smallbanner']//div[@class='company-info']//div[@class='tag-all job-tags']//span/text()").extract()
+        
+        
+    company_name = sel.xpath(".//div[@class='job-sec']/div[@class='name']/text()").extract()
+    company_boss = sel.xpath(".//div[@class='job-sec']/div[@class='level-list']/li[1]/text()").extract()
+    company_establish_time = sel.xpath(".//div[@class='job-sec']/div[@class='level-list']/li[@class='res-time']/text()").extract()
+    company_status = sel.xpath(".//div[@class='job-sec']/div[@class='level-list']/li[@class='manage-state']/text()").extract()
+    company_location = sel.xpath(".//div[@class='job-sec']//div[@class='location-address']/text()").extract()
+    job_status = sel.xpath(".//div[@class='job-status']/text()").extract()
+        
+    contact_staff = sel.xpath(".//div[@class='job-detail']//h2[@class='name']/text()").extract()
+    contact_staff_job = sel.xpath(".//div[@class='job-detail']//p[@class='gray']/text()").extract()[0]
+        
+    job_description = sel.xpath(".//div[@class='detail-content']//div[@class='job-sec']//div[@class='text']/text()").extract()
+    job_description_list = [i.strip() for i in job_description]
+    
+    # based on Class
+    Class_name = str(sel_1.xpath(".//div[@class='menu-sub']//li//h4/text()").extract()[Class])
+    print(Class_name)
+    # based on the subClass
+    find_class = ".//div[@class='job-menu']//div[@class='menu-sub']//li["+str(Class+1)+"]//a/text()"
+    sub_class = sel_1.xpath(find_class).extract()[subClass]
+    print(sub_class)
+    
+    db = client.zhipin
+    collection = db.job
+        
+        
+    get_job_detail_dict = {
+                "job_title" : job_title, 
+                "salary" : salary,
+            "location" : location, 
+            "education" : education_requirement,
+            "time" : time, 
+            "benefit" : benefit, 
+            "company_name" : company_name,
+            "company_boss" : company_boss, 
+            "company_establish_time" : company_establish_time,
+             "company_status" : company_status, 
+            "company_location" : company_location,
+            "job_status" : job_status,
+             "contact_staff" :  contact_staff, 
+            "contact_staff_job" : contact_staff_job, 
+            "job_description_list" : job_description_list,
+            "Class" : Class_name, 
+            "sub_class" : sub_class}
+    collection.insert_one(get_job_detail_dict)
+    print("insert Done")
+    return get_job_detail_dict
+    
+if __name__ == "__main__":
+  for Class in range(len(a)):
+    for subClass in range(len(a[Class])):
+        result = get_each_page(a[Class][subClass], Class, subClass)
